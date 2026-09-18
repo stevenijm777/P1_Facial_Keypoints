@@ -1,0 +1,6 @@
+apuntes/
+__pycache__/
+saved_models/*.pt
+.venv/
+.idea/
+.ipynb_checkpoints/

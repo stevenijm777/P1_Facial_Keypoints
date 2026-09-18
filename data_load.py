@@ -62,7 +62,9 @@ class Normalize(object):
         image_copy = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         
         # scale color range from [0, 255] to [0, 1]
-        image_copy=  image_copy/255.0
+        # (newer matplotlib versions already return images as floats in [0, 1])
+        if image_copy.max() > 1.0:
+            image_copy = image_copy/255.0
             
         
         # scale keypoints to be centered around 0 with a range of [-1, 1]
@@ -159,3 +161,94 @@ class ToTensor(object):
         
         return {'image': torch.from_numpy(image),
                 'keypoints': torch.from_numpy(key_pts)}
+
+# data augmentation transforms (training only)
+
+class RandomRotate(object):
+    """Rotate the image and keypoints by a random angle in [-max_angle, max_angle] degrees."""
+
+    def __init__(self, max_angle=15):
+        self.max_angle = max_angle
+
+    def __call__(self, sample):
+        image, key_pts = sample['image'], sample['keypoints']
+
+        angle = np.random.uniform(-self.max_angle, self.max_angle)
+        h, w = image.shape[:2]
+        M = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+
+        image = cv2.warpAffine(image, M, (w, h), borderMode=cv2.BORDER_REPLICATE)
+        # apply the same affine transform to the (x, y) keypoints
+        key_pts = np.hstack([key_pts, np.ones((key_pts.shape[0], 1))]).dot(M.T)
+
+        return {'image': image, 'keypoints': key_pts}
+
+
+# index of the mirrored keypoint for each of the 68 points (iBUG 300-W layout)
+FLIP_IDX = np.array(
+    list(range(16, -1, -1)) +                       # jaw 0-16
+    list(range(26, 21, -1)) + list(range(21, 16, -1)) +  # eyebrows 17-26
+    [27, 28, 29, 30] +                              # nose bridge
+    [35, 34, 33, 32, 31] +                          # nostrils
+    [45, 44, 43, 42, 47, 46] +                      # right eye <- left eye
+    [39, 38, 37, 36, 41, 40] +                      # left eye <- right eye
+    [54, 53, 52, 51, 50, 49, 48, 59, 58, 57, 56, 55] +  # outer lips
+    [64, 63, 62, 61, 60, 67, 66, 65]                # inner lips
+)
+
+
+class RandomHorizontalFlip(object):
+    """Mirror the image horizontally with probability p, swapping left/right keypoints."""
+
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, sample):
+        image, key_pts = sample['image'], sample['keypoints']
+
+        if np.random.rand() < self.p:
+            w = image.shape[1]
+            image = np.ascontiguousarray(image[:, ::-1])
+            key_pts = key_pts.copy()
+            key_pts[:, 0] = w - 1 - key_pts[:, 0]
+            # a left eye point becomes a right eye point, etc.
+            key_pts = key_pts[FLIP_IDX]
+
+        return {'image': image, 'keypoints': key_pts}
+
+
+class RandomBrightnessContrast(object):
+    """Randomly change brightness and contrast. Use after Normalize (image in [0, 1])."""
+
+    def __init__(self, brightness=0.2, contrast=0.2):
+        self.brightness = brightness
+        self.contrast = contrast
+
+    def __call__(self, sample):
+        image, key_pts = sample['image'], sample['keypoints']
+
+        alpha = 1.0 + np.random.uniform(-self.contrast, self.contrast)
+        beta = np.random.uniform(-self.brightness, self.brightness)
+        image = np.clip(alpha * (image - 0.5) + 0.5 + beta, 0.0, 1.0)
+
+        return {'image': image, 'keypoints': key_pts}
+
+
+class CenterCrop(object):
+    """Crop the center of the image (deterministic, for evaluation)."""
+
+    def __init__(self, output_size):
+        self.output_size = output_size
+
+    def __call__(self, sample):
+        image, key_pts = sample['image'], sample['keypoints']
+
+        h, w = image.shape[:2]
+        top = (h - self.output_size) // 2
+        left = (w - self.output_size) // 2
+
+        image = image[top: top + self.output_size,
+                      left: left + self.output_size]
+        key_pts = key_pts - [left, top]
+
+        return {'image': image, 'keypoints': key_pts}

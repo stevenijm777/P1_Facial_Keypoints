@@ -38,30 +38,29 @@ class Net(nn.Module):
         self.fc2 = nn.Linear(1000, 1000)
         self.fc3 = nn.Linear(1000, 136)
 
-        # 3. Dropout
-        self.dropout = nn.Dropout(p=0.4)
+        # 3. Dropout escalonado (NaimishNet): poco en las primeras capas, más en las densas
+        self.drop1 = nn.Dropout(p=0.1)
+        self.drop2 = nn.Dropout(p=0.2)
+        self.drop3 = nn.Dropout(p=0.3)
+        self.drop4 = nn.Dropout(p=0.4)
+        self.drop5 = nn.Dropout(p=0.5)
+        self.drop6 = nn.Dropout(p=0.6)
 
     def forward(self, x):
         ## TODO: Define the feedforward behavior of this model
         ## x is the input image and, as an example, here you may choose to include a pool/conv step:
         ## x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.dropout(x)
-        x = self.pool(F.relu(self.conv2(x)))
-        x = self.dropout(x)
-        x = self.pool(F.relu(self.conv3(x)))
-        x = self.dropout(x)
-        x = self.pool(F.relu(self.conv4(x)))
-        x = self.dropout(x)
+        x = self.drop1(self.pool(F.relu(self.conv1(x))))
+        x = self.drop2(self.pool(F.relu(self.conv2(x))))
+        x = self.drop3(self.pool(F.relu(self.conv3(x))))
+        x = self.drop4(self.pool(F.relu(self.conv4(x))))
 
         # Aplanar
         x = x.view(x.size(0), -1)
 
         # capas Densas
-        x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        x = F.relu(self.fc2(x))
-        x = self.dropout(x)
+        x = self.drop5(F.relu(self.fc1(x)))
+        x = self.drop6(F.relu(self.fc2(x)))
         x = self.fc3(x)
 
         # a modified x, having gone through all the layers of your model, should be returned
